@@ -1,0 +1,803 @@
+/*
+ * This program takes 4 parameters as input (the index file, the log file, the k for getTopKTerms function and a file containing query terms)
+ * 
+ * It starts by reading index file and creating 2 hashmaps.....one containing the terms and the the size of its postings list and the second containing the term and its postings list.
+ * The first function called is getTopKTerms in which I read the hashmap containing terms and the size of its postings list. The function re-arranges them in decreasing size of postings list and returns the first K of them.
+ * Then it reads the query terms in the file containing them.
+ * It calls the getPostings List function on all the query terms individually. This function returns the postings list by using the second hashmap of terms and postingsLists.
+ * It returns the postings list in two formats....1. Ordered by increasing Document ID and 2. Ordered by decreasing term frequency.
+ * It then Passes these functions to the corresponding TAAT-AND/OR and DAAT-AND/OR functions.
+ */
+
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.StringTokenizer;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
+
+public class CSE535Assignment {
+	
+    public static Map<String, Integer> mapDocFreq = new HashMap<>();
+    public static Map<String, LinkedList<String>> mapPostings = new HashMap<>();
+    public static String indexFile;
+    public static String logFile;
+	ArrayList<LinkedList<String>> PostingsforQueryTermsbyDocId = new ArrayList<>();
+	ArrayList<LinkedList<String>> PostingsforQueryTermsbyTermFreq = new ArrayList<>();
+	
+	
+    
+    // Read the file and write the data into a hashmap
+	public static void readFile() {
+        String line = null;
+        String term;
+        Integer frequency;
+        String posting;
+        String tempfrequency;
+        
+        try {
+            // FileReader reads text files in the default encoding.
+            FileReader fileReader = new FileReader(indexFile);
+
+            // Always wrap FileReader in BufferedReader.
+            BufferedReader bufferedReader = new BufferedReader(fileReader);
+
+            //Tokenize first by /c and then by /m
+            
+            while((line = bufferedReader.readLine()) != null) {
+                StringTokenizer tok = new StringTokenizer(line,"\\");
+                term = tok.nextToken();
+                tempfrequency = tok.nextToken();
+                StringTokenizer st1 = new StringTokenizer(tempfrequency, ("c"));
+                frequency = Integer.parseInt(st1.nextToken());
+                mapDocFreq.put(term, frequency);
+                posting = tok.nextToken();
+                StringTokenizer st2 = new StringTokenizer(posting, ("m"));
+                posting = st2.nextToken();
+                String[] postingsList = posting.split(",");
+                for (int i =0;i<postingsList.length;i++) {
+                	postingsList[i] = postingsList[i].replaceAll("\\[","");
+                	postingsList[i] = postingsList[i].replaceAll("\\]","").trim();
+                }
+                //Store the postings List as a Linked List
+                LinkedList<String> ll = new LinkedList<>();
+                for (String o : postingsList) 
+                	ll.add(o);
+                mapPostings.put(term, ll);
+            }   
+
+            // Always close files.
+            bufferedReader.close();         
+        }
+        catch(FileNotFoundException ex) {
+            System.out.println(
+                "Unable to open file '" + 
+                indexFile + "'");                
+        }
+        catch(IOException ex) {
+            System.out.println(
+                "Error reading file '" 
+                + indexFile + "'");                  
+            // Or we could just do this: 
+            // ex.printStackTrace();
+        }
+	}
+	
+	//Write To Log File
+	public static void writeToLog(String data) {
+		//String logFile = "Logfile.log";
+
+        try {
+            // Assume default encoding.
+            FileWriter fileWriter = new FileWriter(logFile , true);
+
+            // Always wrap FileWriter in BufferedWriter.
+            BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);
+            // Note that write() does not automatically
+            // append a newline character.
+            bufferedWriter.write(data);
+            bufferedWriter.newLine();
+            // Always close files.
+            bufferedWriter.close();
+            fileWriter.close();
+        }
+        catch(IOException ex) {
+            System.out.println(
+                "Error writing to file '" + logFile + "'");
+            // Or we could just do this:
+            // ex.printStackTrace();
+        }
+	}
+	
+	public LinkedHashMap<String, Integer> getTopKTerms (int k) {
+		/*
+		 * Copy the HashMap into a new map called copy.
+		 * Iteratively find the max and remove it from the copy map while inserting it into a LinkedHashMap (To Maintain Order)
+		 * Return First K entries from the LinkedHashMap
+		 */
+		LinkedHashMap<String, Integer> ret = new LinkedHashMap<String, Integer>();
+		LinkedHashMap<String, Integer> temp = new LinkedHashMap<String, Integer>();
+		HashMap<String, Integer> copy = new HashMap<>(mapDocFreq);
+		writeToLog("FUNCTION: getTopK " + k);
+		StringBuffer write = new StringBuffer("Result: ");
+		int iterator =0;
+		while (iterator<copy.size()) {
+			int max=0;
+			for (String key : copy.keySet()) {
+				int k1 = mapDocFreq.get(key);
+				if (k1>=max)
+					max=k1;
+			}
+			Set<Map.Entry<String, Integer>> entrySet1 = copy.entrySet();
+			Iterator<Entry<String, Integer>> entrySetIterator = entrySet1.iterator();
+			while (entrySetIterator.hasNext()) {
+				Entry<String, Integer> entry = entrySetIterator.next();
+				String key = entry.getKey();
+				int value = entry.getValue();
+				if (value == max) {
+					ret.put(key, value);
+					entrySetIterator.remove();
+				}
+			}
+		}
+		int i=0;
+		Set<Map.Entry<String, Integer>> entrySet1 = ret.entrySet();
+		Iterator<Entry<String, Integer>> entrySetIterator = entrySet1.iterator();
+		while (entrySetIterator.hasNext() && i<k) {
+			Entry<String, Integer> entry = entrySetIterator.next();
+			temp.put(entry.getKey(), entry.getValue());
+			write.append(entry.getKey());
+			if (i!=(k-1))
+				write.append(",");
+			i++;
+		}
+		writeToLog(write.toString());
+		return temp;
+		
+	}
+	
+	// Get postings List and write it to a file
+	public LinkedList<String> getPostingsandWrite(String queryTerm) {
+		/*
+		 * Takes as input, a String containing query Terms and for each query Term, retrieves its postings list from the map.
+		 * Passes the postings List to two functions (ArrangeByDocId and ArrangeByDocFreq) which return the postings List arranged by docIds and term frequencies respectively.
+		 * Write these to the log file 
+		 */
+		LinkedList<String> l1 = new LinkedList<>();
+		LinkedList<String> OrderedByTF = new LinkedList<>();
+		LinkedList<String> OrderedByDoc = new LinkedList<>();
+		writeToLog("FUNCTION: getPostings " + queryTerm);
+		if (mapPostings.containsKey(queryTerm)) {
+			l1 = mapPostings.get(queryTerm);
+			OrderedByDoc = ArrangeByDocId(l1);
+			StringBuffer write = new StringBuffer ("Order by doc IDs : ");
+			Iterator<String> i = OrderedByDoc.iterator(); 
+			while (i.hasNext()) {
+				write.append(i.next());
+				if (i.hasNext())
+					write.append(",");
+			}
+			writeToLog(write.toString());
+			OrderedByTF = ArrangeByDocFreq(l1);
+			StringBuffer write1 = new StringBuffer ("Order by TF : ");
+			Iterator<String> j = OrderedByTF.iterator(); 
+			while (j.hasNext()) {
+				write1.append(j.next());
+				if (j.hasNext())
+					write1.append(",");
+			}
+			writeToLog(write1.toString());
+		}
+		else {
+			writeToLog("term not found");
+			return null;
+		}
+		return l1;
+		
+	}
+	
+	//Get Postings List 
+	public LinkedList<String> getPostings(String queryTerm) {
+		/*
+		 * Does the Same thing as the previous function....Except it does not write to file
+		 */
+		LinkedList<String> l1 = new LinkedList<>();
+		if (mapPostings.containsKey(queryTerm)) {
+			l1 = mapPostings.get(queryTerm);
+		}
+		else {
+			l1 = null;
+			System.out.println("no terms like that" + queryTerm);
+		}
+		return l1;
+	}
+	
+	// Arrange Postings List by DocId
+	public LinkedList<String> ArrangeByDocId(LinkedList<String> PostingsList) {
+		/*
+		 * Takes as input a LinkedList containing postings and returns a LinkedList sorted by increasing doc ids
+		 */
+		if (PostingsList == null)
+			return null;
+		LinkedList<String> DocOrdered = new LinkedList<>();
+		LinkedList<String> copy = new LinkedList<>(PostingsList);
+		LinkedList<String> ret = new LinkedList<>();
+		int iterator = 0;
+		while (iterator<PostingsList.size()) {
+			String Docid = copy.getFirst();
+			StringTokenizer st4 = new StringTokenizer(Docid, "//");
+			Integer l = Integer.parseInt(st4.nextToken());
+		int min = l;
+		for(String i: copy) {
+			StringTokenizer s3 = new StringTokenizer(i, "//");
+			Integer k = Integer.parseInt(s3.nextToken());
+			if (k<=min) {
+				min = k;
+			}
+		}
+		Iterator<String> iter = copy.iterator();
+		while(iter.hasNext()){
+			String m = iter.next();
+			StringTokenizer s3 = new StringTokenizer(m, "//");
+			Integer k = Integer.parseInt(s3.nextToken());
+			if (k == min) {
+				DocOrdered.add(m);
+				iter.remove();
+			}
+		}
+		iterator++;
+		}
+		for (String s : DocOrdered){
+			StringTokenizer st = new StringTokenizer(s, "//");
+			ret.add(st.nextToken());
+		}
+		return ret;
+	}
+	
+	//Arrange postings List by TermFrequency
+	public LinkedList<String> ArrangeByDocFreq(LinkedList<String> PostingsList) {
+		//Returns LinkedList sorted by increasing term frequencies
+		if (PostingsList == null)
+			return null;
+		LinkedList<String> DocOrderedFreq = new LinkedList<>();
+		LinkedList<String> copy = new LinkedList<>(PostingsList);
+		LinkedList<String> ret = new LinkedList<>();
+		int iterator = 0;
+		while (iterator<copy.size()) {
+		int max = 0;
+		for(String i: copy) {
+			StringTokenizer s3 = new StringTokenizer(i, "//");
+			s3.nextToken();
+			Integer k = Integer.parseInt(s3.nextToken());
+			if (k>=max) {
+				max = k;
+			}
+		}
+		Iterator<String> iter = copy.iterator();
+		while(iter.hasNext()){
+			String m = iter.next();
+			StringTokenizer s3 = new StringTokenizer(m, "//");
+			s3.nextToken();
+			Integer k = Integer.parseInt(s3.nextToken());
+			if (k == max) {
+				DocOrderedFreq.add(m);	
+				iter.remove();
+			}	
+		}
+		iterator++;
+		}
+		Iterator<String> iter1 = DocOrderedFreq.iterator();
+		while (iter1.hasNext()) {
+			String m = iter1.next();
+			StringTokenizer s3 = new StringTokenizer(m, "//");
+			//iter1.remove();
+			ret.add(s3.nextToken());
+		}
+		return ret;
+	}
+	
+	//Read file and create postings List of query Terms and return Two arraylists of postingLists. One arranged by docid and one arranged by termfreq.
+	public ArrayList<ArrayList<String>> readQueryTermFile (String filename) {
+		String line = null;
+		//LinkedList<String> temp = new LinkedList<>();
+		ArrayList<ArrayList<String>> lines = new ArrayList<>();
+		 try {
+	            // FileReader reads text files in the default encoding.
+	            FileReader fileReader = new FileReader(filename);
+	            BufferedReader bufferedReader = new BufferedReader(fileReader);    
+	            while((line = bufferedReader.readLine()) != null) {
+	            	StringTokenizer st = new StringTokenizer(line," ");
+	            	ArrayList<String> queryTerms = new ArrayList<>();
+	            	while (st.hasMoreTokens()) {
+	            		queryTerms.add(st.nextToken());     		
+	            	}
+	            	lines.add(queryTerms);
+	            }
+         // Always close files.
+         bufferedReader.close();
+
+     }
+     catch(FileNotFoundException ex) {
+         System.out.println(
+             "Unable to open file '" + 
+             filename + "'");                
+     }
+     catch(IOException ex) {
+         System.out.println(
+             "Error reading file '" 
+             + filename + "'");                  
+         // Or we could just do this: 
+         // ex.printStackTrace();
+     }
+		return lines;		
+	}
+	
+	//This is used by the optimized function to sort the arrayList of postings list in increasing order of postings list
+	public ArrayList<LinkedList<String>> SortPostings (ArrayList<LinkedList<String>> PostingsforQueryTermsbyTermFreq) {
+		ArrayList<LinkedList<String>> temp = new ArrayList<>();
+		ArrayList<Integer> order = new ArrayList<>();
+		
+		for (LinkedList<String> ll : PostingsforQueryTermsbyTermFreq) {
+			if (ll != null) {
+			int i = ll.size();
+			order.add(i);
+			}
+		}
+		Collections.sort(order);
+		for (int i=0;i<order.size();i++) {
+			for (LinkedList<String> ll : PostingsforQueryTermsbyTermFreq) {
+				if (ll != null) {
+					if (order.get(i).equals(ll.size()))
+						temp.add(ll);
+				}	
+			}
+		}
+		return temp;		
+	}
+	
+	public HashMap<String,String> TermAtATimeAnd(ArrayList<LinkedList<String>> PostingsforQueryTermsbyTermFreq) {
+		LinkedList<String> ll1 = new LinkedList<>();
+		LinkedList<String> ll2 = new LinkedList<>();
+		HashMap<String,String> ret = new HashMap<>();
+		int Comparision = 0;
+
+		long startTime = System.currentTimeMillis();
+		StringBuffer write = new StringBuffer("Result: ");
+		//If term not found. 
+		for (LinkedList<String> ll : PostingsforQueryTermsbyTermFreq) {
+			if(ll == null) {
+				writeToLog("Terms not found");
+				ret.put("terms", "Not Found");
+				//System.out.println("Suppoed to break");
+				return null;
+			}
+		}
+		CopyOnWriteArrayList<String> temp = new CopyOnWriteArrayList<>();
+		//Copy postings List of first query term in ll1 and second postings list in ll2
+		ll1 = PostingsforQueryTermsbyTermFreq.get(0);
+		if (PostingsforQueryTermsbyTermFreq.get(1) != null)
+			ll2 = PostingsforQueryTermsbyTermFreq.get(1);
+		//If the doc id exists in both, add it to temp
+		for (String DocID1 : ll1) {
+			for (String DocID2 : ll2) {
+				Comparision++;
+				if (DocID1.equals(DocID2)) {
+					temp.add(DocID1);
+				}
+			}
+		}
+		//For term 3 onwards, compare teh postings list of every term with the temp List...If doc id from temp does not exist in postings list for term, remove the doc id from temp 
+		for (int i=2;i<PostingsforQueryTermsbyTermFreq.size();i++) {
+			//ll2.clear();
+			LinkedList<String> ll3 = new LinkedList<>();
+			ll3 = PostingsforQueryTermsbyTermFreq.get(i);
+			for (String DocID1 : temp) {
+				int flag = 0;
+				for (String DocID2 : ll3) {
+					Comparision++;
+					if (DocID1.equals(DocID2)) {
+						flag = 1;
+						break;
+					}
+				}
+				if (flag == 1)
+					continue;
+				else
+					temp.remove(DocID1);
+			}
+		}
+		//long endTime = System.nanoTime();
+		long endTime = System.currentTimeMillis();
+		long duration = endTime - startTime;
+		//duration = duration/1000000000;
+		//ret.put("duration", Long.toString(duration));
+		ret.put("duration", (Double.toString(((double)duration)/1000)));
+		ret.put("found", Integer.toString(temp.size()));
+		ret.put("Comparision", Integer.toString(Comparision));
+		int i=0;
+		Collections.sort(temp);
+		for (String s : temp) {
+			write.append(s);
+			i++;
+			if (i<temp.size())
+				write.append(",");
+		}	
+		ret.put("write", write.toString());	
+		return ret;
+	}
+
+	//TERM AT A TIME AND
+	public HashMap<String,String> TermAtATimeAndalt(ArrayList<LinkedList<String>> PostingsforQueryTermsbyTermFreq) {
+		LinkedList<String> ll1 = new LinkedList<>();
+		HashMap<String,String> ret = new HashMap<>();
+		int Comparision = 0;
+
+		long startTime = System.currentTimeMillis();
+		StringBuffer write = new StringBuffer("Result: ");
+		
+		//If all the terms dont exist, wirte terms not found
+		for (LinkedList<String> ll : PostingsforQueryTermsbyTermFreq) {
+			if(ll == null) {
+				writeToLog("Terms not found");
+				ret.put("terms", "Not Found");
+				System.out.println("Suppoed to break");
+				return null;
+			}
+		}
+		CopyOnWriteArrayList<String> temp = new CopyOnWriteArrayList<>();
+		ll1 = PostingsforQueryTermsbyTermFreq.get(0);
+		//copy postingslist of first query term to temp
+		temp.addAll(ll1);
+		//From the second query term onwards, compare every term in temp with the query terms postings list..... if it does not does not exist in temp, remove it from temp
+		for (int i=1;i<PostingsforQueryTermsbyTermFreq.size();i++) {
+			//ll2.clear();
+			LinkedList<String> ll3 = new LinkedList<>();
+			ll3 = PostingsforQueryTermsbyTermFreq.get(i);
+			for (String DocID1 : temp) {
+				int flag = 0;
+				for (String DocID2 : ll3) {
+					Comparision++;
+					if (DocID1.equals(DocID2)) {
+						flag = 1;
+						break;
+					}
+				}
+				if (flag == 1)
+					continue;
+				else
+					temp.remove(DocID1);
+			}
+		}
+		//long endTime = System.nanoTime();
+		long endTime = System.currentTimeMillis();
+		long duration = endTime - startTime;
+		//duration = duration/1000000000;
+		//ret.put("duration", Long.toString(duration));
+		ret.put("duration", (Double.toString(((double)duration)/1000)));
+		ret.put("found", Integer.toString(temp.size()));
+		ret.put("Comparision", Integer.toString(Comparision));
+		int i=0;
+		Collections.sort(temp);
+		for (String s : temp) {
+			write.append(s);
+			i++;
+			if (i<temp.size())
+				write.append(",");
+		}	
+		ret.put("write", write.toString());	
+		return ret;
+	}
+
+	//TERM AT A TIME OR
+	public int TermAtATimeOR(ArrayList<LinkedList<String>> PostingsforQueryTermsbyTermFreq) {
+		int Comparision = 0;
+			LinkedList<String> ll1 = new LinkedList<>();
+			//long startTime = System.nanoTime();
+			long startTime = System.currentTimeMillis();
+			StringBuffer write = new StringBuffer("Result: ");
+			int checkflag = 0;
+			//If all the terms are not found .....
+			for (LinkedList<String> check:PostingsforQueryTermsbyTermFreq) {
+				if (check == null) {
+					checkflag++;
+				}
+			}
+			if (checkflag == PostingsforQueryTermsbyTermFreq.size()) {
+				writeToLog("Terms not found");
+				return 0;
+			}
+			CopyOnWriteArrayList<String> temp = new CopyOnWriteArrayList<String>();
+			//Copy the postings list of first query term to temp
+			ll1 = PostingsforQueryTermsbyTermFreq.get(0);
+			temp.addAll(ll1);	
+			// from query term 2 onwards, for every query term's postings list, compare every term with every term in temp.....if it does not exist, add it
+			for (int i=0; i<PostingsforQueryTermsbyTermFreq.size();i++) {
+				LinkedList<String> ll2 = new LinkedList<>();
+				ll2 = PostingsforQueryTermsbyTermFreq.get(i);
+				for (String DocID : ll2) {
+					int flag = 0;
+					for (String DocID2 : temp) {
+						Comparision++;
+						if (DocID.equals(DocID2)) {
+							flag =1;
+							break;
+						}
+					}
+					if (flag == 1 )
+						continue;
+					else
+						temp.add(DocID);
+				}
+			}
+			//long endTime = System.nanoTime();
+			long endTime = System.currentTimeMillis();
+			long duration = endTime - startTime;
+			//duration = duration/1000000000;
+			writeToLog(((double)duration)/1000 + " seconds are used");
+			writeToLog(temp.size()+" documents are found");
+			writeToLog(Comparision + " comparisons are made");
+			int i=0;
+			Collections.sort(temp);
+			for (String s : temp) {
+				write.append(s);
+				i++;
+				if (i<temp.size())
+					write.append(",");
+			}				
+			writeToLog(write.toString());	
+	return 0;
+	}
+	
+	//DOCUMENT AT A TIME AND
+	public int DocAtATimeAnd(ArrayList<LinkedList<String>> PostingsforQueryTermsbyDocId) {
+		int Comparision = 0;
+		//long startTime = System.nanoTime();
+		long startTime = System.currentTimeMillis();
+		StringBuffer write = new StringBuffer("Result: ");
+		LinkedList<String> answer = new LinkedList<>();
+		ArrayList<String> aList= new ArrayList<>();
+		int maxList = PostingsforQueryTermsbyDocId.get(0).size();
+		ArrayList<Iterator<String>> arrit = new ArrayList<>();
+		int index=0;
+		//If terms not found
+		for (LinkedList<String> ll: PostingsforQueryTermsbyDocId) {
+			if (ll == null) {
+				writeToLog("Terms not found");
+				return 0;
+			}
+		}
+		//Size of largest Postings.
+		for (int i=0;i<PostingsforQueryTermsbyDocId.size();i++) {
+			if (PostingsforQueryTermsbyDocId.get(i).size()>maxList) {
+				maxList = PostingsforQueryTermsbyDocId.get(i).size();
+				index = i;
+			}
+		}
+
+		//Initialize List Iterators....
+		for (int i=0;i<PostingsforQueryTermsbyDocId.size();i++) {
+			arrit.add(PostingsforQueryTermsbyDocId.get(i).iterator());
+			aList.add(arrit.get(i).next());
+		}
+		//run for Largest postingsList times
+		while (arrit.get(index).hasNext()){
+		//Find max element in all those that the list iterators are pointing to
+		String maxDoc = aList.get(0);
+		for (String s: aList) {
+			if (Integer.parseInt(s)>Integer.parseInt(maxDoc))
+				maxDoc = s;
+		}
+
+		// If all equal
+		String doc = aList.get(0);
+		int flag =0;
+		for (String s: aList) {
+			Comparision++;
+			if (s.equals(doc)) {
+				flag++;
+			}
+		}
+		//increment to next element in every postings list
+		if (flag == aList.size()) {
+			answer.add(doc);
+			aList.clear();
+			for (int j =0;j<arrit.size();j++) {
+				if (arrit.get(j).hasNext())
+					aList.add(arrit.get(j).next());
+			}
+		}
+		//if iterator of present postings list points to doc id that is less than the max doc id pointed by any other iterator
+		else {
+			for (int j=0;j<aList.size();j++)
+			if (Integer.parseInt(aList.get(j))<Integer.parseInt(maxDoc)) {
+				if (arrit.get(j).hasNext()) {
+					aList.set(j, arrit.get(j).next());
+				}
+			}
+		}
+		}
+		long endTime = System.currentTimeMillis();
+		long duration = endTime - startTime;
+		//duration = duration/1000000000;
+		//writeToLog(duration + " seconds are used");
+		writeToLog(((double)duration)/1000 + " seconds are used");
+		writeToLog(answer.size()+" documents are found");
+		writeToLog(Comparision + " comparisons are made");
+		int i=0;
+		Collections.sort(answer);
+		for (String s : answer) {
+			write.append(s);
+			i++;
+			if (i<answer.size())
+				write.append(",");
+		}				
+		writeToLog(write.toString());	
+		return 0;
+	}
+
+	//DOCUMENT AT A TIME OR
+	public int DocAtATimeOR(ArrayList<LinkedList<String>> PostingsforQueryTermsbyDocId) {
+		int Comparision = 0;
+		//long startTime = System.nanoTime();
+		long startTime = System.currentTimeMillis();
+		StringBuffer write = new StringBuffer("Result: ");
+		int checkflag = 0;
+		//IF all terms dont exist...
+		for (LinkedList<String> check:PostingsforQueryTermsbyDocId) {
+			if (check == null) {
+				checkflag++;
+			}
+		}
+		if (checkflag == PostingsforQueryTermsbyDocId.size()) {
+			writeToLog("Terms not found");
+			return 0;
+		}
+		CopyOnWriteArraySet<String> answer = new CopyOnWriteArraySet<String>();
+		ArrayList<String> aList= new ArrayList<>();
+		int maxList = PostingsforQueryTermsbyDocId.get(0).size();
+		ArrayList<Iterator<String>> arrit = new ArrayList<>();
+		int index=0;
+		String Last = null;
+		
+		//Size of largest Postings.
+		for (int i=0;i<PostingsforQueryTermsbyDocId.size();i++) {
+			if (PostingsforQueryTermsbyDocId.get(i).size()>maxList) {
+				maxList = PostingsforQueryTermsbyDocId.get(i).size();
+				index = i;
+			}
+		}
+		
+		//answer.addAll(PostingsforQueryTermsbyDocId.get(0));
+		LinkedList<String> temp = new LinkedList<>();
+		for (String s : temp) {
+			answer.add(s);
+		}
+		//Initialize List Iterators....
+		for (int i=0;i<PostingsforQueryTermsbyDocId.size();i++) {
+			arrit.add(PostingsforQueryTermsbyDocId.get(i).iterator());
+			aList.add(arrit.get(i).next());
+		}
+		//run for Largest postingsList times
+
+		while (arrit.get(index).hasNext()){
+		//String doc;
+			for (String s: aList) {
+				int flag = 1;
+				for (String l : answer) {
+					Comparision++;
+					if (s.equals(l)) {
+						flag = 0;
+						break;
+					}	
+				}
+				if (flag==1) {
+					answer.add(s);
+				}
+			}
+			aList.clear();
+			for (int j =0;j<arrit.size();j++) {
+			if (j==index) {
+				Last = arrit.get(index).next();
+				aList.add(Last);
+			}
+			else  {
+				if (arrit.get(j).hasNext())
+					aList.add(arrit.get(j).next());
+				}
+			}
+		}
+		//Coz last element will not enter the while loop
+		answer.add(Last);
+		long endTime = System.currentTimeMillis();
+		long duration = endTime - startTime;
+		writeToLog(((double)duration)/1000 + " seconds are used");
+		writeToLog(answer.size()+" documents are found");
+		writeToLog(Comparision + " comparisons are made");
+		int i=0;
+		ArrayList<String> display = new ArrayList<>();
+		display.addAll(answer);
+		Collections.sort(display);
+		for (String s : display) {
+			write.append(s);
+			i++;
+			if (i<display.size())
+				write.append(",");
+		}				
+		writeToLog(write.toString());	
+		return 0;
+	}
+	
+	public static void main(String[] args) {
+		LinkedHashMap<String,Integer> TopKTerms = new LinkedHashMap<>();
+		ArrayList<ArrayList<String>> lines = new ArrayList<>();
+		LinkedList<String> temp =new LinkedList<>();
+		CSE535Assignment td = new CSE535Assignment();
+		HashMap<String,String> result = new HashMap<>();
+		HashMap<String,String> optimized = new HashMap<>();
+		
+		indexFile = args[0];
+		logFile = args[1];
+		int gettopK = Integer.parseInt(args[2]);
+		String queryTerms_file = args[3];
+		
+		readFile();
+		TopKTerms = td.getTopKTerms(gettopK);
+		System.out.println(TopKTerms);
+		
+		//For every line in the query terms file...
+		lines = td.readQueryTermFile(queryTerms_file);
+		for (ArrayList<String> line : lines) {
+			for (String queryTerm : line){
+				td.getPostingsandWrite(queryTerm);
+			}
+			td.PostingsforQueryTermsbyTermFreq.clear();
+			td.PostingsforQueryTermsbyDocId.clear();
+			StringBuffer write = new StringBuffer();
+			int i = 0;
+            for (String queryTerm: line) {
+            	 temp = td.getPostings(queryTerm);
+            	 write.append(queryTerm);
+            	 i++;
+            	 if (i<line.size())
+            		 write.append(",");
+            	 td.PostingsforQueryTermsbyDocId.add(td.ArrangeByDocId(temp));
+            	 td.PostingsforQueryTermsbyTermFreq.add(td.ArrangeByDocFreq(temp));
+            }
+
+            writeToLog("FUNCTION: termAtATimeQueryAnd "+ write.toString());
+			result = td.TermAtATimeAndalt(td.PostingsforQueryTermsbyTermFreq);
+			if (result != null) {
+				writeToLog(result.get("duration") + " seconds are used");
+				writeToLog(result.get("found")+" documents are found");
+				writeToLog(result.get("Comparision") + " comparisons are made");
+			}
+			ArrayList<LinkedList<String>> sorted = new ArrayList<>();
+			sorted = td.SortPostings(td.PostingsforQueryTermsbyTermFreq);
+			//System.out.println("calling optimized");
+			optimized = td.TermAtATimeAndalt(sorted);
+			if (optimized != null)
+				writeToLog(optimized.get("Comparision") + " Comparisions are made with optimization");
+			if (result != null)
+				writeToLog(result.get("write"));
+			writeToLog("FUNCTION: termAtATimeQueryOr "+ write.toString());
+			td.TermAtATimeOR(td.PostingsforQueryTermsbyTermFreq);
+			writeToLog("FUNCTION: docAtATimeQueryAnd "+ write.toString());
+			td.DocAtATimeAnd(td.PostingsforQueryTermsbyDocId);
+			writeToLog("FUNCTION: docAtATimeQueryOr "+ write.toString());
+			td.DocAtATimeOR(td.PostingsforQueryTermsbyDocId);
+		}
+		
+	}
+}
